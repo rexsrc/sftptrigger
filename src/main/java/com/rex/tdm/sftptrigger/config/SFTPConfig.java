@@ -13,6 +13,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.integration.annotation.InboundChannelAdapter;
 import org.springframework.integration.annotation.Poller;
 import org.springframework.integration.annotation.ServiceActivator;
+import org.springframework.integration.config.ExpressionControlBusFactoryBean;
 import org.springframework.integration.core.MessageSource;
 import org.springframework.integration.file.filters.CompositeFileListFilter;
 import org.springframework.integration.file.filters.FileListFilter;
@@ -63,6 +64,13 @@ public class SFTPConfig {
     private DataSource dataSource;
     
     @Bean
+    @ServiceActivator(inputChannel = "controlBusChannel")
+    public ExpressionControlBusFactoryBean controlBus() throws Exception {
+        ExpressionControlBusFactoryBean controlBus = new ExpressionControlBusFactoryBean();
+        return controlBus;
+    }
+    
+    @Bean
     public SessionFactory<LsEntry> sftpSessionFactory() {
         DefaultSftpSessionFactory factory = new DefaultSftpSessionFactory(true);
         factory.setHost(sftpHost);
@@ -107,7 +115,7 @@ public class SFTPConfig {
     
     
     @Bean
-    @InboundChannelAdapter(channel = "fromSftpChannel", poller = @Poller(fixedDelay = "${sftp.poller.fixed-delay-ms:1000}") )
+    @InboundChannelAdapter(channel = "fromSftpChannel", poller = @Poller(fixedDelay = "${sftp.poller.fixed-delay-ms:5000}") )
     public MessageSource<File> sftpMessageSource() {
         SftpInboundFileSynchronizingMessageSource source = new SftpInboundFileSynchronizingMessageSource(
                 sftpInboundFileSynchronizer());
@@ -173,7 +181,7 @@ public class SFTPConfig {
     }
     
     @Bean
-    @InboundChannelAdapter(channel = "fromSftpChannel2", poller = @Poller(fixedDelay = "${sftp.poller.fixed-delay-ms:1000}"))
+    @InboundChannelAdapter(channel = "fromSftpChannel2", poller = @Poller(fixedDelay = "${sftp.poller.fixed-delay-ms:5000}"))
     public MessageSource<File> sftpMessageSource2() {
         SftpInboundFileSynchronizingMessageSource source = new SftpInboundFileSynchronizingMessageSource(
                 sftpInboundFileSynchronizer2());
