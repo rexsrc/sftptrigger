@@ -30,7 +30,7 @@ public class SftpTriggerController implements ApplicationContextAware{
 	
 
 	@GetMapping("/sftp1/{action}")
-	public Map<String,Object> getUserPinStatus(
+	public Map<String,Object> setActionSftp1(
 			HttpServletRequest request,
 			HttpServletResponse response, 
 			@PathVariable("action") String action){
@@ -40,16 +40,39 @@ public class SftpTriggerController implements ApplicationContextAware{
 		MessageChannel controlChannel = this.context.getBean("controlBusChannel", MessageChannel.class);
 		
 		if (action!=null && action.equalsIgnoreCase("enable")) {//Enable
-			controlChannel.send(new GenericMessage("@'SFTPConfig.sftpMessageSource.inboundChannelAdapter'.start()"));
+			controlChannel.send(new GenericMessage<String>("@'SFTPConfig.sftpMessageSource.inboundChannelAdapter'.start()"));
 			System.err.println(System.currentTimeMillis() +"--sftpMessageSource enabled--");
 			
 		}else if (action!=null && action.equalsIgnoreCase("disable")) {//Disable
-			controlChannel.send(new GenericMessage("@'SFTPConfig.sftpMessageSource.inboundChannelAdapter'.stop()"));
+			controlChannel.send(new GenericMessage<String>("@'SFTPConfig.sftpMessageSource.inboundChannelAdapter'.stop()"));
 			System.err.println(System.currentTimeMillis() +"--sftpMessageSource disabled--");
 		}
 		
 		return resp;
 	}
+	
+	@GetMapping("/sftp2/{action}")
+	public Map<String,Object> setActionSftp2(
+			HttpServletRequest request,
+			HttpServletResponse response, 
+			@PathVariable("action") String action){
+		
+		Map<String,Object> resp = new HashMap<String,Object>();
+		
+		MessageChannel controlChannel = this.context.getBean("controlBusChannel", MessageChannel.class);
+		
+		if (action!=null && action.equalsIgnoreCase("enable")) {//Enable
+			controlChannel.send(new GenericMessage<String>("@'SFTPConfig.sftpMessageSource2.inboundChannelAdapter'.start()"));
+			System.err.println(System.currentTimeMillis() +"--sftpMessageSource enabled--");
+			
+		}else if (action!=null && action.equalsIgnoreCase("disable")) {//Disable
+			controlChannel.send(new GenericMessage<String>("@'SFTPConfig.sftpMessageSource2.inboundChannelAdapter'.stop()"));
+			System.err.println(System.currentTimeMillis() +"--sftpMessageSource disabled--");
+		}
+		
+		return resp;
+	}
+
 
 	@Override
 	public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {
