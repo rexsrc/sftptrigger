@@ -1,9 +1,10 @@
 package com.rex.tdm.sftptrigger.config;
 
 import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CountDownLatch;
 
 import javax.sql.DataSource;
 
@@ -11,14 +12,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.core.task.TaskExecutor;
 import org.springframework.integration.annotation.InboundChannelAdapter;
 import org.springframework.integration.annotation.Poller;
 import org.springframework.integration.annotation.ServiceActivator;
-import org.springframework.integration.channel.QueueChannel;
+import org.springframework.integration.annotation.Transformer;
 import org.springframework.integration.config.ExpressionControlBusFactoryBean;
 import org.springframework.integration.core.MessageSource;
-import org.springframework.integration.dsl.Pollers;
+import org.springframework.integration.file.FileHeaders;
 import org.springframework.integration.file.filters.CompositeFileListFilter;
 import org.springframework.integration.file.filters.FileListFilter;
 import org.springframework.integration.file.filters.FileSystemPersistentAcceptOnceFileListFilter;
@@ -26,33 +26,19 @@ import org.springframework.integration.file.filters.SimplePatternFileListFilter;
 import org.springframework.integration.file.remote.session.CachingSessionFactory;
 import org.springframework.integration.file.remote.session.SessionFactory;
 import org.springframework.integration.jdbc.metadata.JdbcMetadataStore;
-import org.springframework.integration.jdbc.store.JdbcChannelMessageStore;
-import org.springframework.integration.jdbc.store.JdbcMessageStore;
-import org.springframework.integration.jdbc.store.channel.ChannelMessageStoreQueryProvider;
-import org.springframework.integration.jdbc.store.channel.OracleChannelMessageStoreQueryProvider;
 import org.springframework.integration.metadata.ConcurrentMetadataStore;
-import org.springframework.integration.scheduling.PollerMetadata;
 import org.springframework.integration.sftp.filters.SftpPersistentAcceptOnceFileListFilter;
 import org.springframework.integration.sftp.filters.SftpSimplePatternFileListFilter;
 import org.springframework.integration.sftp.inbound.SftpInboundFileSynchronizer;
 import org.springframework.integration.sftp.inbound.SftpInboundFileSynchronizingMessageSource;
+import org.springframework.integration.sftp.inbound.SftpStreamingMessageSource;
 import org.springframework.integration.sftp.session.DefaultSftpSessionFactory;
-import org.springframework.integration.store.ChannelMessageStore;
-import org.springframework.integration.store.MessageGroupQueue;
-import org.springframework.integration.transaction.TransactionInterceptorBuilder;
-import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.integration.sftp.session.SftpRemoteFileTemplate;
+import org.springframework.integration.transformer.StreamTransformer;
 import org.springframework.messaging.Message;
-import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.MessageHandler;
 import org.springframework.messaging.MessageHandlingException;
 import org.springframework.messaging.MessagingException;
-import org.springframework.messaging.PollableChannel;
-import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.annotation.Isolation;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.interceptor.TransactionInterceptor;
-
 import com.jcraft.jsch.ChannelSftp;
 import com.jcraft.jsch.ChannelSftp.LsEntry;
 
@@ -197,7 +183,7 @@ public class SFTPConfig {
     }
     
     @Bean
-    @InboundChannelAdapter(channel = "fromSftpChannel2", poller = @Poller(fixedDelay = "${sftp.poller.fixed-delay-ms:5000}"), autoStartup="true")
+    @InboundChannelAdapter(channel = "fromSftpChannel2", poller = @Poller(fixedDelay = "${sftp.poller.fixed-delay-ms:5000}"), autoStartup="false")
     public MessageSource<File> sftpMessageSource2() {
         SftpInboundFileSynchronizingMessageSource source = new SftpInboundFileSynchronizingMessageSource(
                 sftpInboundFileSynchronizer2());
@@ -234,9 +220,78 @@ public class SFTPConfig {
         };
     }
     
+    
+  //-------------------------------------------------------------------//
+    
+    
     @ServiceActivator(inputChannel= "errorChannel" )
     public void handleErrorMessage(Message<MessageHandlingException> message) {
     	System.err.println(System.currentTimeMillis() +"--ERR--"+ message.getPayload().getCause());
+    }
+    
+    
+  //-------------------------------------------------------------------//
+    
+    
+    
+    @Bean
+    @InboundChannelAdapter(channel = "streamSftpChannel", poller = @Poller(fixedDelay = "3000"), autoStartup="true")
+    public MessageSource<InputStream> sftpMessageStreamSource(){
+    	SftpStreamingMessageSource messageSource = new SftpStreamingMessageSource(sftpRemoteFileTemplate());
+        messageSource.setRemoteDirectory("/SFTP_DATA/APP_IN/tdmdtt/dat/out/interface/spring3");
+        
+        SftpPersistentAcceptOnceFileListFilter sftpPersistFilter = new SftpPersistentAcceptOnceFileListFilter(metadataStore(),"sftp3:");
+        
+        SftpSimplePatternFileListFilter sftpSimpleFilter = new SftpSimplePatternFileListFilter("*.log");
+        
+        List<FileListFilter<ChannelSftp.LsEntry>> filters = new ArrayList<FileListFilter<ChannelSftp.LsEntry>>();
+        
+        filters.add(sftpPersistFilter);
+        filters.add(sftpSimpleFilter);
+        
+        CompositeFileListFilter<ChannelSftp.LsEntry> comp = new CompositeFileListFilter<ChannelSftp.LsEntry>(filters);
+        
+        messageSource.setFilter(comp);
+        messageSource.setMaxFetchSize(1); /// do not change this value in cluster environment
+        return messageSource;
+    }
+    
+    @Bean
+    public SftpRemoteFileTemplate sftpRemoteFileTemplate() {
+        return new SftpRemoteFileTemplate(sftpSessionFactory());
+    }
+    
+    /*@Bean  // for downloading the content
+	@Transformer(inputChannel = "streamSftpChannel", outputChannel = "streamDataChannel")
+	public org.springframework.integration.transformer.Transformer transformer() {
+		return new StreamTransformer("UTF-8"); /// to make automatically close the session
+	}*/
+    
+    @Bean
+    @ServiceActivator(inputChannel = "streamSftpChannel")
+    public MessageHandler resultStreamHandler3() {
+        
+    	return new MessageHandler() {
+            @Override
+            public void handleMessage(Message<?> message) throws MessagingException {
+            	System.err.println(System.currentTimeMillis() +"--3--getHeaders.FileHeaders.REMOTE_DIRECTORY:"+ message.getHeaders().get(FileHeaders.REMOTE_DIRECTORY));
+            	System.err.println(System.currentTimeMillis() +"--3--getHeaders.FileHeaders.REMOTE_FILE:"+ message.getHeaders().get(FileHeaders.REMOTE_FILE));
+            	System.err.println(System.currentTimeMillis() +"--3--getHeaders.FileHeaders.REMOTE_FILE_INFO:"+ message.getHeaders().get(FileHeaders.REMOTE_FILE_INFO));
+                
+            	Object obj = (Object)message.getPayload();
+            	
+            	if (obj instanceof InputStream) {
+            		InputStream is = (InputStream)obj;
+            		try {
+						is.close();
+						System.err.println(System.currentTimeMillis() +"--3--getPayload.Closed");
+					} catch (IOException e) {
+						e.printStackTrace();
+					}
+            	}
+            	
+            }
+        };
     }
 	
 }
